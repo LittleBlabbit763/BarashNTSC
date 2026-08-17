@@ -20,8 +20,3 @@ After downloading, read the README.md for how to run it.
 ## More Information
 
 BarashNTSC is a project, inspired by [NTSCqt](https://github.com/JargeZ/ntscqt/) and [ntsc-rs](https://github.com/ntsc-rs/ntsc-rs).
-## License
-
-If you fork or redistribute this project, please keep the attribution to the original **BarashNTSC**. 
-
-Add your own `LICENSE` file if you publish a derivative work.
