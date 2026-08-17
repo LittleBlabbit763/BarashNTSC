@@ -1,0 +1,13 @@
+{
+  "app": "BarashNTSC",
+  "type": "vhs-preset",
+  "version": 1,
+  "name": "worn_tape_90s",
+  "params": {
+    "detail": 35, "noise": 25, "color_bleed": 15, "chroma_shift": 3,
+    "color_phase": 10, "composite": 25, "ghosting": 20, "interlace": 15,
+    "tracking": 30, "jitter": 12, "tape_wear": 35, "flicker": 10,
+    "scanlines": 0, "vignette": 8, "edge_enh": 30, "fade": 25,
+    "saturation": 100, "contrast": 100, "brightness": 0
+  }
+}
