@@ -15,8 +15,6 @@ Built with Python, OpenCV, NumPy and Tkinter.
 
 The latest version of BarashNTSC can be downloaded from [the releases page](https://github.com/LittleBlabbit763/BarashNTSC/releases).
 
-After downloading, read the README.md for how to run it.
-
 ## More Information
 
 BarashNTSC is a project, inspired by [NTSCqt](https://github.com/JargeZ/ntscqt/) and [ntsc-rs](https://github.com/ntsc-rs/ntsc-rs).
