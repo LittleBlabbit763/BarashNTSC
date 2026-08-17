@@ -1,5 +1,4 @@
-# BarashNTSC_purple.py
-# Purple edition of BarashNTSC with right-click frame copy/save.
+# BarashNTSC.py
 from __future__ import annotations
 
 import concurrent.futures as cf
