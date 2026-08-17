@@ -1,5 +1,5 @@
 # BarashNTSC 📼
-
+<img width="1380" height="720" alt="Без названия742_20260817160128" src="https://github.com/user-attachments/assets/19a49937-2b6f-4b04-9629-8d70de72b542" />
 **BarashNTSC** is a real-time VHS / NTSC-style video effect processor with a cozy purple GUI.
 It emulates the look of an old analog VCR tape: low tape resolution, color bleed, composite
 "rainbow" artifacts, tracking errors, tape wear, motion ghosting, flicker and more — on both
