@@ -5,6 +5,7 @@ import concurrent.futures as cf
 import ctypes
 import hashlib
 import json
+import multiprocessing
 import os
 import queue
 import shutil
@@ -266,8 +267,8 @@ def _randn(shape):
     return arr
 
 
-def _worker_init():
-    cv2.setNumThreads(1)
+def _worker_init(threads=1):
+    cv2.setNumThreads(threads)
     global _WORKER_PROC
     _WORKER_PROC = None
 
@@ -283,6 +284,24 @@ class VHSProcessor:
     def __init__(self):
         self.prev_small = None
         self.rng = np.random.default_rng()
+        self._noise_bank = {}
+
+    def _noise(self, shape):
+        h, w = shape
+        key = (h, w)
+        if key not in self._noise_bank:
+            self._noise_bank[key] = self.rng.standard_normal((h * 2, w * 2), dtype=np.float32)
+        big = self._noise_bank[key]
+        y0 = int(self.rng.integers(0, h + 1))
+        x0 = int(self.rng.integers(0, w + 1))
+        crop = big[y0:y0 + h, x0:x0 + w]
+        if self.rng.random() < 0.5:
+            crop = np.fliplr(crop)
+        if self.rng.random() < 0.5:
+            crop = np.flipud(crop)
+        if self.rng.random() < 0.5:
+            crop = -crop
+        return crop
 
     def reset(self):
         self.prev_small = None
@@ -302,7 +321,7 @@ class VHSProcessor:
         detail = max(0.06, float(p.detail) / 100.0)
         lw = max(48, int(w0 * detail))
         if lw < w0:
-            y = cv2.resize(y, (lw, h0), interpolation=cv2.INTER_AREA)
+            y = cv2.resize(y, (lw, h0), interpolation=cv2.INTER_LINEAR)
             y = cv2.resize(y, (w0, h0), interpolation=cv2.INTER_LINEAR)
 
         if p.edge_enh > 0:
@@ -311,10 +330,11 @@ class VHSProcessor:
 
         if p.fade > 0:
             f = float(p.fade) / 100.0
-            y = y * (1.0 - 0.15 * f) + 255.0 * 0.09 * f
+            y *= (1.0 - 0.15 * f)
+            y += 255.0 * 0.09 * f
             sat_f = 1.0 - 0.25 * f
-            cr = (cr - 128.0) * sat_f + 128.0
-            cb = (cb - 128.0) * sat_f + 128.0
+            cr -= 128.0; cr *= sat_f; cr += 128.0
+            cb -= 128.0; cb *= sat_f; cb += 128.0
 
         bleed = float(p.color_bleed)
         factor = 2.0 + bleed * 0.6
@@ -325,13 +345,11 @@ class VHSProcessor:
 
         if p.noise > 0:
             cn = float(p.noise) * 0.18
-            cr = cr + _randn(cr.shape) * cn
-            cb = cb + _randn(cb.shape) * cn
+            cr = cr + self._noise(cr.shape) * cn
+            cb = cb + self._noise(cb.shape) * cn
 
         cr = cv2.resize(cr, (w0, h0), interpolation=cv2.INTER_LINEAR)
         cb = cv2.resize(cb, (w0, h0), interpolation=cv2.INTER_LINEAR)
-        cr = cv2.blur(cr, (3, 1))
-        cb = cv2.blur(cb, (3, 1))
 
         if p.chroma_shift > 0:
             s = int(p.chroma_shift)
@@ -359,20 +377,20 @@ class VHSProcessor:
                 cb = (cr_c * sa + cb_c * ca + 128.0).astype(np.float32)
 
         if p.contrast != 100:
-            y = (y - 128.0) * (float(p.contrast) / 100.0) + 128.0
+            y -= 128.0; y *= (float(p.contrast) / 100.0); y += 128.0
         if p.brightness != 0:
-            y = y + float(p.brightness)
+            y += float(p.brightness)
         if p.saturation != 100:
             sat = float(p.saturation) / 100.0
-            cr = (cr - 128.0) * sat + 128.0
-            cb = (cb - 128.0) * sat + 128.0
+            cr -= 128.0; cr *= sat; cr += 128.0
+            cb -= 128.0; cb *= sat; cb += 128.0
 
         if p.noise > 0:
             n = float(p.noise)
             nh = max(8, h0 * 3 // 4)
             nw = max(8, w0 * 3 // 4)
-            ln = _randn((nh, nw)) * (n * 0.35)
-            ln = cv2.resize(ln, (w0, h0), interpolation=cv2.INTER_LINEAR)
+            ln = self._noise((nh, nw)) * (n * 0.35)
+            ln = cv2.resize(ln, (w0, h0), interpolation=cv2.INTER_NEAREST)
             y = y + ln
 
         if p.tape_wear > 0:
@@ -445,8 +463,8 @@ class VHSProcessor:
 
         if p.tracking > 0:
             add = (band_mask * (float(p.tracking) * 0.15))[:, np.newaxis, np.newaxis]
-            tn = _randn((max(8, h0 // 4), max(8, w0 // 4)))
-            tn = cv2.resize(tn, (w0, h0), interpolation=cv2.INTER_LINEAR)
+            tn = self._noise((max(8, h0 // 4), max(8, w0 // 4)))
+            tn = cv2.resize(tn, (w0, h0), interpolation=cv2.INTER_NEAREST)
             tn = (tn * float(p.tracking) * 0.25)[:, :, np.newaxis]
             tn *= band_mask[:, np.newaxis, np.newaxis]
             img = np.clip(img.astype(np.float32) + add + tn, 0, 255).astype(np.uint8)
@@ -455,7 +473,7 @@ class VHSProcessor:
             alpha = min(0.60, float(p.ghosting) / 100.0 * 0.40)
             if self.prev_small is not None and self.prev_small.shape == img.shape:
                 img = cv2.addWeighted(img, 1.0 - alpha, self.prev_small, alpha, 0.0)
-            self.prev_small = img.copy()
+            self.prev_small = img
         elif ghost:
             self.prev_small = None
 
@@ -540,6 +558,7 @@ class BarashNTSCApp:
         self.default_params = VHSParams()
         self.vars = {}
         self.value_labels = {}
+        self.scales = {}
         self.input_path = None
         self.cap = None
         self.audio = None
@@ -647,6 +666,7 @@ class BarashNTSCApp:
             scale = ttk.Scale(row, from_=mn, to=mx, orient="horizontal",
                               command=lambda val, v=var, lbl=value_label: self._on_scale(v, lbl, val))
             scale.set(getattr(self.default_params, key))
+            self.scales[key] = scale
             scale.grid(row=0, column=1, sticky="ew", padx=6)
             row.columnconfigure(1, weight=1)
 
@@ -831,6 +851,8 @@ class BarashNTSCApp:
                 val = max(mn, min(mx, val))
                 self.vars[key].set(val)
                 self.value_labels[key].config(text=str(val))
+                if key in self.scales:
+                    self.scales[key].set(val)
                 applied += 1
 
             if applied == 0:
@@ -1377,9 +1399,9 @@ class BarashNTSCApp:
     def _auto_profile():
         cores = os.cpu_count() or 2
         if cores <= 2:
-            return 1, 480, "ultrafast"
+            return 1, 360, "veryfast"
         if cores <= 4:
-            return 2, 560, "veryfast"
+            return 2, 480, "veryfast"
         return min(6, cores - 1), 640, "veryfast"
 
     def _export_worker(self, options):
@@ -1422,7 +1444,7 @@ class BarashNTSCApp:
                 internal_w = min(auto_internal, out_w)
             else:
                 internal_w = max(128, min(int(internal_req), out_w))
-            workers = auto_workers
+            workers = 1 if options.get("force_single") else auto_workers
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
             self.ui_queue.put(("status", f"Export profile: {workers} worker(s), internal {internal_w}, preset {preset}"))
@@ -1451,7 +1473,7 @@ class BarashNTSCApp:
                 cmd = ["ffmpeg", "-y", "-loglevel", "error",
                        "-f", "rawvideo", "-pix_fmt", "bgr24",
                        "-s", f"{out_w}x{out_h}", "-r", f"{fps:.3f}", "-i", "-",
-                       "-c:v", "libx264", "-preset", preset, "-crf", "18",
+                       "-c:v", "libx264", "-preset", preset, "-crf", "25",
                        "-pix_fmt", "yuv420p", video_target]
                 sub_kwargs = {"stdin": subprocess.PIPE, "stdout": subprocess.DEVNULL, "stderr": subprocess.PIPE}
                 if os.name == "nt":
@@ -1507,15 +1529,15 @@ class BarashNTSCApp:
                     yield (chunk_start, chunk, out_h, out_w, params_dict, out_w, out_h, internal_w)
 
             if workers == 1:
-                _worker_init()
+                _worker_init(os.cpu_count() or 2)
                 for task in task_iter():
                     for b in _export_task(task):
                         handle(b)
                     if total > 0:
                         progress = min(100.0, processed_count / max(1, total) * 100.0)
-                        self.ui_queue.put(("progress", progress, f"Processing frame {processed_count}/{total}"))
+                        self.ui_queue.put(("progress", progress, f"Rendering: {progress:.1f}% ({processed_count}/{total} frames)"))
             else:
-                with cf.ProcessPoolExecutor(max_workers=workers, initializer=_worker_init) as ex:
+                with cf.ProcessPoolExecutor(max_workers=workers, initializer=_worker_init, initargs=(1,)) as ex:
                     pending = deque()
                     for task in task_iter():
                         pending.append(ex.submit(_export_task, task))
@@ -1587,6 +1609,12 @@ class BarashNTSCApp:
                     os.remove(temp_video_path)
                 except Exception:
                     pass
+            if ("process pool" in str(exc).lower() or "brokenprocesspool" in type(exc).__name__.lower()) and not options.get("force_single"):
+                opts2 = dict(options)
+                opts2["force_single"] = True
+                self.ui_queue.put(("status", "Worker pool failed; retrying single-threaded..."))
+                threading.Thread(target=self._export_worker, args=(opts2,), daemon=True).start()
+                return
             self.ui_queue.put(("error", str(exc), 0.0))
 
     def _create_writer(self, path, fps, size):
@@ -1680,4 +1708,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()
