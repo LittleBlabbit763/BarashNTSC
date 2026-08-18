@@ -1,0 +1,27 @@
+{
+  "app": "BarashNTSC",
+  "type": "vhs-preset",
+  "version": 1,
+  "name": "example_ANALOG",
+  "params": {
+    "detail": 39,
+    "noise": 74,
+    "color_bleed": 20,
+    "chroma_shift": 0,
+    "color_phase": 4,
+    "composite": 18,
+    "edge_enh": 25,
+    "fade": 15,
+    "ghosting": 15,
+    "interlace": 10,
+    "tracking": 12,
+    "jitter": 8,
+    "tape_wear": 12,
+    "flicker": 5,
+    "scanlines": 0,
+    "vignette": 6,
+    "saturation": 105,
+    "contrast": 129,
+    "brightness": 0
+  }
+}
